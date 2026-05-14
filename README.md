@@ -1,6 +1,6 @@
 # Thoughts - A Full-Stack Blog Application
 
-A complete full-stack blog application with a React frontend and Node.js backend. This project features user authentication, a global feed for blogs, daily posting limits, and voting functionality on posts. 
+A complete full-stack igeas application with a React frontend and Node.js backend. This project features user authentication, a global feed for ideas, daily posting limits, and voting functionality on posts. 
 
 ## Features
 - **User Authentication**: Register and login using JWT.

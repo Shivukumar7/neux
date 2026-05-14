@@ -3,27 +3,14 @@ import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  PenLine,
-  Trash2,
-  Save,
-  X,
-  Edit3,
-  Calendar,
-  PlusCircle,
-  MessageSquare,
-  Sparkles,
-  LogOut,
-  ThumbsUp,
-  ThumbsDown,
-  User,
-  XCircle
+import { 
+  Send, Trash2, Edit2, LogOut, ChevronUp, ChevronDown, 
+  Globe, User, Calendar as CalIcon, Box, Activity, Users, Plus, Key
 } from 'lucide-react';
 import Auth from './Auth';
 
-const API_URL = 'http://localhost:3000/api/blogs';
-
-
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = `${API_BASE_URL}/api/blogs`;
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -34,14 +21,32 @@ function App() {
   const [editContent, setEditContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [deleteParams, setDeleteParams] = useState(null);
-  const [notification, setNotification] = useState(null); // { message, type: 'error'|'success' }
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [activeTab, setActiveTab] = useState('global'); // 'global' or 'personal'
+  const [groups, setGroups] = useState([]);
+  const [activeGroupId, setActiveGroupId] = useState(null);
+  const [showGroupModal, setShowGroupModal] = useState(null); // 'create' or 'join'
+  const [groupForm, setGroupForm] = useState({ name: '', duration_hours: '24', join_code: '' });
 
   useEffect(() => {
     if (token) {
       fetchBlogs();
+      fetchGroups();
     }
-  }, [token, selectedDate]);
+  }, [token, selectedDate, activeGroupId]);
+
+  const fetchGroups = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/groups`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        setGroups(await response.json());
+      }
+    } catch (error) {
+      console.error('Error fetching groups:', error);
+    }
+  };
 
   const handleLogin = (newToken, newUsername) => {
     localStorage.setItem('token', newToken);
@@ -59,13 +64,16 @@ function App() {
   };
 
   const fetchBlogs = async () => {
-    // If not authenticated, don't fetch or clear blogs
     if (!token) return;
-
     try {
       setIsLoading(true);
       const formattedDate = format(selectedDate, 'yyyy-MM-dd');
-      const response = await fetch(`${API_URL}?date=${formattedDate}`, {
+      let url = `${API_URL}?date=${formattedDate}`;
+      if (activeGroupId) {
+        url += `&group_id=${activeGroupId}`;
+      }
+
+      const response = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -88,47 +96,68 @@ function App() {
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ content: newContent }),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ content: newContent, group_id: activeGroupId }),
       });
-
-      const data = await response.json();
 
       if (response.ok) {
         setNewContent('');
         fetchBlogs();
       } else {
-        setNotification({
-          message: data.error || 'Failed to create post',
-          type: 'error',
-          icon: 'limit' // specific icon for limit
-        });
+        const data = await response.json();
+        alert(data.error || 'Failed to post');
       }
     } catch (error) {
-      console.error('Error creating blog:', error);
-      setNotification({ message: 'Network error occurred', type: 'error' });
+      console.error('Error creating:', error);
+    }
+  };
+
+  const submitGroupModal = async () => {
+    try {
+      if (showGroupModal === 'create') {
+        const res = await fetch(`${API_BASE_URL}/api/groups`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ name: groupForm.name, duration_hours: groupForm.duration_hours }),
+        });
+        if (res.ok) {
+          fetchGroups();
+          setShowGroupModal(null);
+          setGroupForm({ name: '', duration_hours: '24', join_code: '' });
+        } else {
+          const err = await res.json();
+          alert(err.error);
+        }
+      } else if (showGroupModal === 'join') {
+        const res = await fetch(`${API_BASE_URL}/api/groups/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ join_code: groupForm.join_code }),
+        });
+        if (res.ok) {
+          fetchGroups();
+          setShowGroupModal(null);
+          setGroupForm({ name: '', duration_hours: '24', join_code: '' });
+        } else {
+          const err = await res.json();
+          alert(err.error);
+        }
+      }
+    } catch (error) {
+      console.error('Error with group action:', error);
     }
   };
 
   const handleVote = async (id, currentVote, type) => {
-    // If clicking same vote type, toggle to 'none'
     const newVote = currentVote === type ? 'none' : type;
 
-    // Optimistic update
     setBlogs(blogs.map(blog => {
       if (blog.id === id) {
         let scoreDiff = 0;
-        // Remove old vote effect
         if (currentVote === 'up') scoreDiff -= 1;
         if (currentVote === 'down') scoreDiff += 1;
-
-        // Add new vote effect
         if (newVote === 'up') scoreDiff += 1;
         if (newVote === 'down') scoreDiff -= 1;
-
         return { ...blog, user_vote: newVote, score: (Number(blog.score) || 0) + scoreDiff };
       }
       return blog;
@@ -137,58 +166,29 @@ function App() {
     try {
       await fetch(`${API_URL}/${id}/vote`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ vote_type: newVote })
       });
-      // specific error handling if needed, but optimistic UI usually sufficient
     } catch (error) {
       console.error('Vote failed:', error);
-      // Could revert state here
       fetchBlogs();
     }
   };
 
-  const handleDeleteClick = (id) => {
-    setDeleteParams({ id });
-  };
-
   const confirmDelete = async () => {
     if (!deleteParams) return;
-
     try {
       const response = await fetch(`${API_URL}/${deleteParams.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-
       if (response.ok) {
         fetchBlogs();
         setDeleteParams(null);
-      } else {
-        const errData = await response.json();
-        setNotification({ message: 'Failed to delete: ' + (errData.error || 'Unknown error'), type: 'error' });
       }
     } catch (error) {
-      console.error('Error deleting blog:', error);
-      setNotification({ message: 'Error deleting blog: ' + error.message, type: 'error' });
+      console.error('Error deleting:', error);
     }
-  };
-
-  const cancelDelete = () => {
-    setDeleteParams(null);
-  };
-
-  const startEditing = (blog) => {
-    setEditingId(blog.id);
-    setEditContent(blog.content);
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditContent('');
   };
 
   const handleUpdate = async (id) => {
@@ -196,10 +196,7 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/${id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ content: editContent }),
       });
       if (response.ok) {
@@ -207,280 +204,265 @@ function App() {
         fetchBlogs();
       }
     } catch (error) {
-      console.error('Error updating blog:', error);
+      console.error('Error updating:', error);
     }
   };
 
+  if (!token) return <Auth onLogin={handleLogin} />;
 
-
-  if (!token) {
-    return <Auth onLogin={handleLogin} />;
-  }
+  const displayedBlogs = blogs.filter(b => activeTab === 'global' || b.username === username);
 
   return (
-    <div className="app-container">
-      <div className="background-shapes">
-        <div className="shape shape-1"></div>
-        <div className="shape shape-2"></div>
-        <div className="shape shape-3"></div>
+    <>
+      <div className="mesh-bg">
+        <div className="mesh-blob blob-1"></div>
+        <div className="mesh-blob blob-2"></div>
+        <div className="mesh-blob blob-3"></div>
       </div>
 
-      <header className="app-header">
-        <div className="header-content">
-          <div className="logo-container">
-            <Sparkles className="logo-icon" size={32} />
-            <h1>Thought of the Day</h1>
+      <div className="app-container">
+        <header className="top-nav surface">
+          <div className="brand">
+            <div className="brand-icon"><Activity size={24} color="#000" /></div>
+            <h1>Nexus</h1>
           </div>
-          <div className="header-controls">
-            <button onClick={handleLogout} className="btn-icon logout-btn" title="Sign Out">
-              <LogOut size={20} />
+          <div className="nav-actions">
+            <div className="user-profile">
+              <div className="avatar">{username ? username.charAt(0).toUpperCase() : 'U'}</div>
+              <span>{username}</span>
+            </div>
+            <button className="btn btn-outline" onClick={handleLogout} style={{ padding: '0.5rem 1rem' }}>
+              <LogOut size={16} /> Logout
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="main-content">
-        <div className="layout-grid">
+        <main className="main-grid">
           <div className="feed-column">
-            <section className="create-section glass-card">
-              <div className="section-header">
-                <PlusCircle className="section-icon" size={20} />
-                <h2>New Entry</h2>
+            
+            <div className="compose-box surface">
+              <div className="compose-header">
+                <Box size={20} color="var(--secondary)" />
+                <h2>Log a thought</h2>
               </div>
-              <form onSubmit={handleCreate}>
-                <div className="input-wrapper">
-                  <textarea
-                    className="blog-input"
-                    value={newContent}
-                    onChange={(e) => setNewContent(e.target.value)}
-                    placeholder="What's on your mind today?"
-                    rows={3}
-                  />
-                </div>
-                <div className="form-footer">
-                  <button type="submit" className="btn btn-primary">
-                    <PenLine size={18} />
-                    <span>Post Memory</span>
+              <textarea 
+                className="compose-input" 
+                placeholder="Transmit your ideas to the network..." 
+                value={newContent}
+                onChange={e => setNewContent(e.target.value)}
+              />
+              <div className="compose-footer">
+                <button className="btn btn-gradient" onClick={handleCreate}>
+                  <Send size={16} /> Transmit
+                </button>
+              </div>
+            </div>
+
+            <div className="feed-header">
+              <h2>Neural Feed {activeGroupId ? `- ${groups.find(g => g.id === activeGroupId)?.name}` : ''}</h2>
+              {!activeGroupId && (
+                <div className="feed-tabs">
+                  <button className={`tab-btn ${activeTab === 'global' ? 'active' : ''}`} onClick={() => setActiveTab('global')}>
+                    <Globe size={16} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> Global
+                  </button>
+                  <button className={`tab-btn ${activeTab === 'personal' ? 'active' : ''}`} onClick={() => setActiveTab('personal')}>
+                    <User size={16} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} /> Personal
                   </button>
                 </div>
-              </form>
-            </section>
-
-            <section className="blogs-list">
-              {/* Your Thoughts Section */}
-              <div className="list-header">
-                <User size={20} />
-                <h2>Your Thoughts</h2>
-              </div>
-
-              {isLoading ? (
-                <div className="loading-state"><div className="spinner"></div></div>
-              ) : (
-                <div className="cards-grid" style={{ marginBottom: '3rem' }}>
-                  {blogs.filter(b => b.username === username).length > 0 ? (
-                    <AnimatePresence mode="popLayout">
-                      {blogs.filter(b => b.username === username).map((blog) => (
-                        <motion.div
-                          key={blog.id}
-                          layout
-                          initial={{ opacity: 0, y: 30 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          transition={{ duration: 0.3 }}
-                          className="blog-card glass-card"
-                        >
-                          <div className="card-content">
-                            {editingId === blog.id ? (
-                              <div className="edit-mode">
-                                <textarea
-                                  className="blog-input edit-input"
-                                  value={editContent}
-                                  onChange={(e) => setEditContent(e.target.value)}
-                                  rows={5}
-                                  autoFocus
-                                />
-                                <div className="action-buttons">
-                                  <button onClick={() => handleUpdate(blog.id)} className="btn btn-save" title="Save">
-                                    <Save size={18} />
-                                  </button>
-                                  <button onClick={cancelEditing} className="btn btn-cancel" title="Cancel">
-                                    <X size={18} />
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="view-mode">
-                                <div className="blog-text">{blog.content}</div>
-                                <div className="card-footer">
-                                  <div className="meta-info">
-                                    <span className="info-pill">
-                                      <User size={14} />
-                                      <span className="username">You</span>
-                                    </span>
-                                  </div>
-
-                                  <div className="vote-actions">
-                                    <button
-                                      onClick={() => handleVote(blog.id, blog.user_vote, 'up')}
-                                      className={`btn-icon vote-btn ${blog.user_vote === 'up' ? 'voted-up' : ''}`}
-                                    >
-                                      <ThumbsUp size={18} />
-                                    </button>
-                                    <span className={`vote-count ${blog.score > 0 ? 'positive' : blog.score < 0 ? 'negative' : ''}`}>
-                                      {blog.score || 0}
-                                    </span>
-                                    <button
-                                      onClick={() => handleVote(blog.id, blog.user_vote, 'down')}
-                                      className={`btn-icon vote-btn ${blog.user_vote === 'down' ? 'voted-down' : ''}`}
-                                    >
-                                      <ThumbsDown size={18} />
-                                    </button>
-                                  </div>
-
-                                  <div className="action-buttons">
-                                    <button onClick={() => startEditing(blog)} className="btn-icon edit" title="Edit">
-                                      <Edit3 size={16} />
-                                    </button>
-                                    <button onClick={() => handleDeleteClick(blog.id)} className="btn-icon delete" title="Delete">
-                                      <Trash2 size={16} />
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </motion.div>
-                      ))}
-                    </AnimatePresence>
-                  ) : (
-                    <p className="text-secondary" style={{ fontStyle: 'italic', opacity: 0.7 }}>You haven't posted any thoughts yet.</p>
-                  )}
-                </div>
               )}
+            </div>
 
-              {/* Community Thoughts Section */}
-              <div className="list-header">
-                <MessageSquare size={20} />
-                <h2>Community Thoughts</h2>
+            {isLoading ? (
+              <div className="loader"></div>
+            ) : displayedBlogs.length === 0 ? (
+              <div className="empty-state">
+                <Activity size={48} />
+                <p>No transmissions found for this sector.</p>
               </div>
+            ) : (
+              <AnimatePresence>
+                {displayedBlogs.map(blog => (
+                  <motion.div 
+                    key={blog.id} 
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="post-card surface"
+                  >
+                    <div className="post-header">
+                      <div className="post-author">
+                        <div className="author-avatar">{blog.username.substring(0, 2).toUpperCase()}</div>
+                        <div>
+                          <div className="author-name">{blog.username}</div>
+                          <div className="post-time">{format(new Date(blog.created_at), 'HH:mm')}</div>
+                        </div>
+                      </div>
+                      
+                      {blog.username === username && (
+                        <div className="post-actions-menu">
+                          <button className="icon-btn" onClick={() => { setEditingId(blog.id); setEditContent(blog.content); }}>
+                            <Edit2 size={16} />
+                          </button>
+                          <button className="icon-btn danger" onClick={() => setDeleteParams({ id: blog.id })}>
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
 
-              {isLoading ? (
-                <div className="loading-state">
-                  <div className="spinner"></div>
-                </div>
-              ) : (
-                <div className="cards-grid">
-                  <AnimatePresence mode="popLayout">
-                    {blogs
-                      .filter(b => b.username !== username)
-                      .sort((a, b) => Number(b.score) - Number(a.score) || new Date(b.created_at) - new Date(a.created_at))
-                      .map((blog) => (
-                        <motion.div
-                          key={blog.id}
-                          layout
-                          initial={{ opacity: 0, y: 30 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          transition={{ duration: 0.3 }}
-                          className="blog-card glass-card"
+                    {editingId === blog.id ? (
+                      <div style={{ marginBottom: '1rem' }}>
+                        <textarea 
+                          className="styled-input" 
+                          style={{ minHeight: '100px', marginBottom: '1rem' }}
+                          value={editContent}
+                          onChange={e => setEditContent(e.target.value)}
+                        />
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                          <button className="btn btn-outline" onClick={() => setEditingId(null)}>Cancel</button>
+                          <button className="btn btn-gradient" onClick={() => handleUpdate(blog.id)}>Save</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="post-content">{blog.content}</div>
+                    )}
+
+                    <div className="post-footer">
+                      <div className="vote-group">
+                        <button 
+                          className={`vote-btn up ${blog.user_vote === 'up' ? 'active' : ''}`}
+                          onClick={() => handleVote(blog.id, blog.user_vote, 'up')}
                         >
-                          <div className="card-content">
-                            <div className="view-mode">
-                              <div className="blog-text">{blog.content}</div>
-                              <div className="card-footer">
-                                <div className="meta-info">
-                                  <span className="info-pill">
-                                    <User size={14} />
-                                    <span className="username">{blog.username || 'Anonymous'}</span>
-                                  </span>
-                                </div>
-
-                                <div className="vote-actions">
-                                  <button
-                                    onClick={() => handleVote(blog.id, blog.user_vote, 'up')}
-                                    className={`btn-icon vote-btn ${blog.user_vote === 'up' ? 'voted-up' : ''}`}
-                                  >
-                                    <ThumbsUp size={18} />
-                                  </button>
-                                  <span className={`vote-count ${blog.score > 0 ? 'positive' : blog.score < 0 ? 'negative' : ''}`}>
-                                    {blog.score || 0}
-                                  </span>
-                                  <button
-                                    onClick={() => handleVote(blog.id, blog.user_vote, 'down')}
-                                    className={`btn-icon vote-btn ${blog.user_vote === 'down' ? 'voted-down' : ''}`}
-                                  >
-                                    <ThumbsDown size={18} />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))}
-                  </AnimatePresence>
-                </div>
-              )}
-            </section>
+                          <ChevronUp size={20} />
+                        </button>
+                        <div className="vote-score">{blog.score}</div>
+                        <button 
+                          className={`vote-btn down ${blog.user_vote === 'down' ? 'active' : ''}`}
+                          onClick={() => handleVote(blog.id, blog.user_vote, 'down')}
+                        >
+                          <ChevronDown size={20} />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            )}
           </div>
 
-          <aside className="sidebar-column">
-            <div className="calendar-widget glass-card">
+          <aside>
+            <div className="sidebar-panel surface" style={{ marginBottom: '1.5rem' }}>
+              <div className="calendar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Users size={20} color="var(--primary)" />
+                  <h3>Groups</h3>
+                </div>
+                <div>
+                  <button className="icon-btn" title="Create Group" onClick={() => setShowGroupModal('create')}><Plus size={16}/></button>
+                  <button className="icon-btn" title="Join Group" onClick={() => setShowGroupModal('join')}><Key size={16}/></button>
+                </div>
+              </div>
+              <div className="groups-list">
+                <div 
+                  className={`group-item ${!activeGroupId ? 'active' : ''}`} 
+                  onClick={() => setActiveGroupId(null)}
+                >
+                  <Globe size={14} /> Global Nexus
+                </div>
+                {groups.map(group => (
+                  <div 
+                    key={group.id} 
+                    className={`group-item ${activeGroupId === group.id ? 'active' : ''}`}
+                    onClick={() => setActiveGroupId(group.id)}
+                  >
+                    <span className="group-name">{group.name}</span>
+                    {activeGroupId === group.id && <span className="group-code">Code: {group.join_code}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="sidebar-panel surface">
+              <div className="calendar-header">
+                <CalIcon size={20} color="var(--primary)" />
+                <h3>Time Matrix</h3>
+              </div>
               <DatePicker
                 selected={selectedDate}
                 onChange={(date) => setSelectedDate(date)}
-                dateFormat="EEEE, MMMM d, yyyy"
-                maxDate={new Date()}
                 inline
+                maxDate={new Date()}
               />
             </div>
           </aside>
-        </div>
-      </main>
+        </main>
+      </div>
 
-      {/* Delete Confirmation Modal */}
-      {
-        deleteParams && (
-          <div className="modal-overlay">
-            <div className="modal-content glass-card">
-              <h3>Delete Memory?</h3>
-              <p>Are you sure you want to delete this specific memory? This action cannot be undone.</p>
-              <div className="modal-actions">
-                <button onClick={cancelDelete} className="btn btn-secondary">Cancel</button>
-                <button onClick={confirmDelete} className="btn btn-danger">Delete</button>
-              </div>
+      {deleteParams && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Delete Record</h3>
+            <p>Are you sure you want to purge this transmission from the nexus?</p>
+            <div className="modal-actions">
+              <button className="btn btn-outline" onClick={() => setDeleteParams(null)}>Cancel</button>
+              <button className="btn btn-gradient" onClick={confirmDelete} style={{ background: 'var(--primary)' }}>Purge</button>
             </div>
           </div>
-        )
-      }
-      {/* Notification Modal */}
-      {
-        notification && (
-          <div className="modal-overlay" onClick={() => setNotification(null)}>
-            <div className="modal-content glass-card notification-modal" onClick={e => e.stopPropagation()}>
-              <div className={`notification-icon-wrapper ${notification.type}`}>
-                {notification.icon === 'limit' ? (
-                  <AlertTriangle size={48} className="icon-limit" />
-                ) : notification.type === 'error' ? (
-                  <XCircle size={48} />
-                ) : (
-                  <CheckCircle size={48} />
-                )}
-              </div>
+        </div>
+      )}
 
-              <h3 className="notification-title">
-                {notification.icon === 'limit' ? 'Daily Limit Reached' : notification.type === 'error' ? 'Something went wrong' : 'Success'}
-              </h3>
-
-              <p className="notification-message">{notification.message}</p>
-
-              <button onClick={() => setNotification(null)} className="btn btn-primary full-width">
-                Got it
+      {showGroupModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '400px' }}>
+            <h3>{showGroupModal === 'create' ? 'Establish Group' : 'Join Group'}</h3>
+            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {showGroupModal === 'create' ? (
+                <>
+                  <input 
+                    className="styled-input" 
+                    placeholder="Group Name" 
+                    value={groupForm.name} 
+                    onChange={e => setGroupForm({...groupForm, name: e.target.value})}
+                  />
+                  <div className="duration-selector">
+                    {[
+                      { label: '1H', value: '1' },
+                      { label: '24H', value: '24' },
+                      { label: '3D', value: '72' },
+                      { label: '1W', value: '168' },
+                      { label: 'Perm', value: 'permanent' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`duration-btn ${groupForm.duration_hours === opt.value ? 'active' : ''}`}
+                        onClick={() => setGroupForm({...groupForm, duration_hours: opt.value})}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <input 
+                  className="styled-input" 
+                  placeholder="Joining Code" 
+                  value={groupForm.join_code} 
+                  onChange={e => setGroupForm({...groupForm, join_code: e.target.value})}
+                />
+              )}
+            </div>
+            <div className="modal-actions" style={{ marginTop: '1.5rem' }}>
+              <button className="btn btn-outline" onClick={() => setShowGroupModal(null)}>Cancel</button>
+              <button className="btn btn-gradient" onClick={submitGroupModal}>
+                {showGroupModal === 'create' ? 'Create' : 'Join'}
               </button>
             </div>
           </div>
-        )
-      }
-    </div >
+        </div>
+      )}
+    </>
   );
 }
 

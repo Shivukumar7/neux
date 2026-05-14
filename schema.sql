@@ -1,26 +1,48 @@
-CREATE DATABASE IF NOT EXISTS blog_db;
-USE blog_db;
-
 CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     username VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS blogs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
+    group_id INT DEFAULT NULL,
     content TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS votes (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
     blog_id INT NOT NULL,
-    vote_type ENUM('up', 'down') NOT NULL,
+    vote_type VARCHAR(10) CHECK (vote_type IN ('up', 'down')) NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (blog_id) REFERENCES blogs(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_vote (user_id, blog_id)
+    UNIQUE (user_id, blog_id)
 );
+
+CREATE TABLE IF NOT EXISTS groups (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    join_code VARCHAR(50) NOT NULL UNIQUE,
+    created_by INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+    id SERIAL PRIMARY KEY,
+    group_id INT NOT NULL,
+    user_id INT NOT NULL,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE (group_id, user_id)
+);
+
+ALTER TABLE blogs ADD COLUMN IF NOT EXISTS group_id INT DEFAULT NULL;
+ALTER TABLE blogs DROP CONSTRAINT IF EXISTS fk_group;
+ALTER TABLE blogs ADD CONSTRAINT fk_group FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE;
