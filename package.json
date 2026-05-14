@@ -1,0 +1,11 @@
+{
+  "name": "nexus-root",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "cd client && npm install && npm run build && cd ../server && npm install",
+    "start": "cd server && node migrate.js && node server.js"
+  }
+}
