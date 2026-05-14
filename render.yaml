@@ -2,6 +2,7 @@ services:
   - type: web
     name: nexus-api
     env: node
+    plan: free
     buildCommand: "cd client && npm install && npm run build && cd ../server && npm install"
     startCommand: "cd server && node migrate.js && node server.js"
     envVars:
@@ -18,3 +19,4 @@ databases:
   - name: nexus-db
     databaseName: nexus
     user: nexus_user
+    plan: free
